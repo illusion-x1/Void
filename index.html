@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>topology-flow-generator</title>
+<style>
+  :root {
+    --panel: rgba(14, 14, 16, .76);
+    --edge: rgba(255, 255, 255, .09);
+    --text: #e9e9eb;
+    --mute: #86868e;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    color: var(--text);
+    font: 12px/1.4 -apple-system, "Inter", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  body.hidden.idle { cursor: none; }
+
+  /* Corner icons */
+  #dock {
+    position: fixed; right: 14px; bottom: 14px; z-index: 3;
+    display: flex; gap: 2px;
+    mix-blend-mode: difference;
+    transition: opacity .35s;
+  }
+  #dock button {
+    width: 30px; height: 30px; display: grid; place-items: center;
+    border: 0; border-radius: 8px; background: none; color: #fff;
+    opacity: .4; cursor: pointer; transition: opacity .2s, background .2s;
+  }
+  #dock button:hover, #dock button:focus-visible { opacity: 1; background: rgba(255, 255, 255, .14); outline: none; }
+  #dock svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  body.hidden #dock { opacity: 0; }
+  body.hidden #dock:hover, body.hidden #dock:focus-within { opacity: 1; }
+
+  /* Settings panel */
+  #panel {
+    position: fixed; right: 14px; bottom: 54px; z-index: 2;
+    width: 276px; max-height: calc(100vh - 80px); overflow-y: auto;
+    padding: 16px 16px 14px;
+    background: var(--panel);
+    -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    backdrop-filter: blur(18px) saturate(1.2);
+    border: 1px solid var(--edge); border-radius: 14px;
+    opacity: 0; transform: translateY(8px); pointer-events: none;
+    transition: opacity .25s, transform .25s;
+    scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .2) transparent;
+  }
+  body.open:not(.hidden) #panel { opacity: 1; transform: none; pointer-events: auto; }
+
+  .group { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--edge); }
+  .group:last-child { border: 0; margin-bottom: 0; padding-bottom: 0; }
+
+  .sl { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; margin-bottom: 8px; }
+  .sl:last-child { margin-bottom: 0; }
+  .sl output { color: var(--mute); font-variant-numeric: tabular-nums; }
+  .sl input { grid-column: 1 / -1; }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 14px; background: none; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 2px; background: rgba(255, 255, 255, .18); border-radius: 2px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; margin-top: -4.5px; border-radius: 50%; background: #fff; border: 0; }
+  input[type=range]::-moz-range-track { height: 2px; background: rgba(255, 255, 255, .18); border-radius: 2px; }
+  input[type=range]::-moz-range-thumb { width: 11px; height: 11px; border: 0; border-radius: 50%; background: #fff; }
+  input[type=range]:focus-visible { outline: 1px solid rgba(255, 255, 255, .35); outline-offset: 2px; border-radius: 4px; }
+
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .row:last-child { margin-bottom: 0; }
+  .row .grow { flex: 1; }
+
+  input[type=color] {
+    -webkit-appearance: none; appearance: none;
+    width: 22px; height: 22px; padding: 0; border: 1px solid rgba(255, 255, 255, .28);
+    border-radius: 50%; background: none; cursor: pointer; overflow: hidden;
+  }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; }
+  input[type=color]::-moz-color-swatch { border: 0; border-radius: 50%; }
+
+  .tg { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .tg input { position: absolute; opacity: 0; pointer-events: none; }
+  .tg i { width: 26px; height: 14px; border-radius: 7px; background: rgba(255, 255, 255, .18); position: relative; transition: background .2s; }
+  .tg i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .tg input:checked + i { background: rgba(255, 255, 255, .55); }
+  .tg input:checked + i::after { transform: translateX(12px); }
+  .tg input:focus-visible + i { outline: 1px solid rgba(255, 255, 255, .5); outline-offset: 2px; }
+
+  .chips { display: flex; gap: 8px; }
+  .chip { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .28); cursor: pointer; padding: 0; transition: transform .15s; }
+  .chip:hover { transform: scale(1.12); }
+
+  .btns { display: flex; gap: 8px; }
+  .btn {
+    flex: 1; padding: 6px 0; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--edge); background: rgba(255, 255, 255, .04); color: var(--text); font: inherit;
+    transition: background .2s;
+  }
+  .btn:hover { background: rgba(255, 255, 255, .1); }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    padding: 7px 14px; border-radius: 999px; z-index: 4;
+    background: rgba(14, 14, 16, .78); border: 1px solid var(--edge); color: var(--text);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    opacity: 0; pointer-events: none; transition: opacity .4s;
+  }
+  #toast.show { opacity: 1; }
+  .err { position: fixed; inset: 0; display: grid; place-items: center; color: #aaa; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #panel, #dock, #toast, .chip { transition: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="panel" aria-label="Settings"></div>
+
+<div id="dock">
+  <button id="bSettings" title="Settings (S)" aria-label="Settings">
+    <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+  </button>
+  <button id="bFull" title="Fullscreen (F)" aria-label="Fullscreen">
+    <svg viewBox="0 0 24 24"><path id="fsPath" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+  </button>
+  <button id="bHide" title="Hide interface (H)" aria-label="Hide interface">
+    <svg viewBox="0 0 24 24" id="hideSvg"></svg>
+  </button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+/* ---------- Shader ---------- */
+
+const VERT = `#version 300 es
+layout(location = 0) in vec2 p;
+void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
+
+const FRAG = `#version 300 es
+precision highp float;
+out vec4 outColor;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec2  uSeed;
+uniform float uAmp;
+uniform float uScale;
+uniform float uSpacing;
+uniform float uBand;
+uniform float uUnif;
+uniform float uWidth;
+uniform float uIndexEvery;
+uniform float uIndexMul;
+uniform float uGrad;
+uniform vec3  uBg;
+uniform vec3  uC1;
+uniform vec3  uC2;
+
+// 3D simplex noise (Ashima Arts / Ian McEwan, MIT)
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise(vec3 v) {
+  const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i  = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g  = step(x0.yzx, x0.xyz);
+  vec3 l  = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+             i.z + vec4(0.0, i1.z, i2.z, 1.0))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j  = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x  = x_ * ns.x + ns.yyyy;
+  vec4 y  = y_ * ns.x + ns.yyyy;
+  vec4 h  = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+}
+
+// The invisible terrain
+float height(vec2 uv) {
+  vec3 q = vec3(uv + uSeed, uTime);
+  float n = snoise(q) + 0.3 * snoise(q * 2.1 + 7.3);
+  return n * 0.8 * uAmp;
+}
+
+const float STEP = 0.45;   // height between band centers
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uScale;
+
+  // height and gradient (per uv unit)
+  const float E = 0.03;
+  float h0 = height(uv);
+  float gx = height(uv + vec2(E, 0.0)) - h0;
+  float gy = height(uv + vec2(0.0, E)) - h0;
+  float g  = length(vec2(gx, gy)) / E;
+
+  // slope divisor: constant (raw contours) to local slope (even spacing)
+  float gFloor = 0.3 * uAmp;
+  float gRef   = 2.0 * uAmp;
+  float dv     = mix(gRef, sqrt(g * g + gFloor * gFloor), uUnif);
+
+  // nearest band center contour and offset from it
+  float k = floor(h0 / STEP + 0.5);
+  float o = h0 - k * STEP;
+
+  // distance to that contour, measured in line spacings
+  float m  = (o / dv) * uScale / uSpacing;
+  float fw = max(length(vec2(dFdx(m), dFdy(m))), 1e-4);
+  float j  = floor(m + 0.5);
+  float pd = abs(m - j) / fw;   // pixels to nearest line
+
+  bool  idx = uIndexEvery > 0.5 && j == 0.0 && mod(k, uIndexEvery) < 0.5;
+  float w   = 0.5 * uWidth * (idx ? uIndexMul : 1.0);
+  float a   = clamp(w - pd + 0.5, 0.0, 1.0);
+
+  a *= step(abs(j), uBand + 0.01);                          // lines per band
+  a *= 1.0 - smoothstep(0.55, 0.9, abs(o) * 2.0 / STEP);    // fade before neighbouring band
+  a *= 1.0 - smoothstep(0.22, 0.45, fw);                    // fade where lines get too dense
+
+  float t  = smoothstep(0.15, 0.85, clamp(0.5 + h0 / (uAmp * 1.6), 0.0, 1.0));
+  vec3  lc = mix(uC1, uC2, uGrad * t);
+  outColor = vec4(mix(uBg, lc, a), 1.0);
+}`;
+
+/* ---------- Settings ---------- */
+
+const DEFAULTS = {
+  amp: 1.3, scale: 420, speed: 0.5,
+  spacing: 20, band: 1, unif: 1, width: 1.2, indexEvery: 3, indexMul: 2.2,
+  bg: "#000000", c1: "#ffffff", c2: "#7dd3fc", grad: false,
+  seed: [12.3, 45.6]
+};
+
+const PRESETS = [
+  { bg: "#000000", c1: "#ffffff", c2: "#ffffff", grad: false },
+  { bg: "#151515", c1: "#ececec", c2: "#8a8a8a", grad: true },
+  { bg: "#05121b", c1: "#7dd3fc", c2: "#c4b5fd", grad: true },
+  { bg: "#140a05", c1: "#ff8a3d", c2: "#ffd479", grad: true },
+  { bg: "#06130e", c1: "#4ade80", c2: "#22d3ee", grad: true },
+  { bg: "#f4f1ea", c1: "#1a1a1a", c2: "#1a1a1a", grad: false }
+];
+
+// key, label, min, max, step, formatter
+const SLIDERS = [
+  [
+    ["amp", "Amplitude", 0.4, 3, 0.02, v => v.toFixed(2)],
+    ["scale", "Scale", 150, 1000, 10, v => v + " px"],
+    ["speed", "Speed", 0, 2, 0.02, v => v.toFixed(2)]
+  ],
+  [
+    ["spacing", "Line Spacing", 8, 60, 1, v => v + " px"],
+    ["band", "Band Size", 0, 6, 1, v => (2 * v + 1) + (v ? " lines" : " line")],
+    ["unif", "Uniformity", 0, 1, 0.01, v => Math.round(v * 100) + "%"],
+    ["width", "Line Width", 0.5, 4, 0.1, v => v.toFixed(1)],
+    ["indexEvery", "Index Lines", 0, 8, 1, v => v ? "every " + v : "off"],
+    ["indexMul", "Index Weight", 1, 4, 0.1, v => v.toFixed(1) + "x"]
+  ]
+];
+
+const KEY = "topoflow.v1";
+let S = { ...DEFAULTS };
+try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+
+/* ---------- WebGL ---------- */
+
+const $ = s => document.querySelector(s);
+const canvas = $("#c");
+const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, powerPreference: "high-performance" });
+
+if (!gl) {
+  document.body.insertAdjacentHTML("beforeend", '<p class="err">WebGL2 is not available in this browser.</p>');
+  throw new Error("WebGL2 unavailable");
+}
+
+function compile(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(sh));
+    throw new Error("Shader compile failed");
+  }
+  return sh;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+const U = {};
+["uRes", "uTime", "uSeed", "uAmp", "uScale", "uSpacing", "uBand", "uUnif", "uWidth",
+ "uIndexEvery", "uIndexMul", "uGrad", "uBg", "uC1", "uC2"]
+  .forEach(n => U[n] = gl.getUniformLocation(prog, n));
+
+const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+
+let dpr = 1, t = 0, paused = false, last = performance.now();
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.floor(innerWidth * dpr), h = Math.floor(innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  gl.viewport(0, 0, w, h);
+}
+addEventListener("resize", resize);
+resize();
+
+function draw() {
+  gl.uniform2f(U.uRes, canvas.width, canvas.height);
+  gl.uniform1f(U.uTime, t);
+  gl.uniform2f(U.uSeed, S.seed[0], S.seed[1]);
+  gl.uniform1f(U.uAmp, S.amp);
+  gl.uniform1f(U.uScale, S.scale * dpr);
+  gl.uniform1f(U.uSpacing, S.spacing * dpr);
+  gl.uniform1f(U.uBand, S.band);
+  gl.uniform1f(U.uUnif, S.unif);
+  gl.uniform1f(U.uWidth, S.width * dpr);
+  gl.uniform1f(U.uIndexEvery, S.indexEvery);
+  gl.uniform1f(U.uIndexMul, S.indexMul);
+  gl.uniform1f(U.uGrad, S.grad ? 1 : 0);
+  gl.uniform3fv(U.uBg, rgb(S.bg));
+  gl.uniform3fv(U.uC1, rgb(S.c1));
+  gl.uniform3fv(U.uC2, rgb(S.c2));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (!paused) t += dt * S.speed * 0.16;
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- Panel ---------- */
+
+const panel = $("#panel");
+const decimals = step => (String(step).split(".")[1] || "").length;
+
+function sliderHTML([k, label, min, max, step]) {
+  return `<label class="sl"><span>${label}</span><output data-o="${k}"></output>` +
+         `<input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}"></label>`;
+}
+
+panel.innerHTML =
+  `<div class="group">${SLIDERS[0].map(sliderHTML).join("")}</div>` +
+  `<div class="group">${SLIDERS[1].map(sliderHTML).join("")}</div>` +
+  `<div class="group">
+     <div class="row"><span class="grow">Colors</span>
+       <input type="color" data-k="bg" title="Background">
+       <input type="color" data-k="c1" title="Line color">
+       <input type="color" data-k="c2" title="Second line color"></div>
+     <div class="row"><label class="tg grow"><input type="checkbox" data-k="grad"><i></i><span>Color by height</span></label></div>
+     <div class="chips">${PRESETS.map((p, i) => {
+       const f = p.grad
+         ? `linear-gradient(135deg, ${p.bg} 0 40%, ${p.c1} 40% 70%, ${p.c2} 70%)`
+         : `linear-gradient(135deg, ${p.bg} 0 50%, ${p.c1} 50%)`;
+       return `<button class="chip" data-p="${i}" style="background:${f}" aria-label="Preset ${i + 1}"></button>`;
+     }).join("")}</div>
+   </div>` +
+  `<div class="group"><div class="btns">
+     <button class="btn" id="bSeed">New seed</button>
+     <button class="btn" id="bReset">Reset</button></div></div>`;
+
+const allSliders = SLIDERS.flat();
+
+function syncUI() {
+  allSliders.forEach(([k, , , , , fmt]) => {
+    panel.querySelector(`input[data-k="${k}"]`).value = S[k];
+    panel.querySelector(`output[data-o="${k}"]`).textContent = fmt(+S[k]);
+  });
+  ["bg", "c1", "c2"].forEach(k => panel.querySelector(`input[data-k="${k}"]`).value = S[k]);
+  panel.querySelector('input[data-k="grad"]').checked = S.grad;
+}
+syncUI();
+
+panel.addEventListener("input", e => {
+  const el = e.target, k = el.dataset.k;
+  if (!k) return;
+  S[k] = el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value : el.value;
+  const def = allSliders.find(d => d[0] === k);
+  if (def) panel.querySelector(`output[data-o="${k}"]`).textContent = def[5](+S[k]);
+  save();
+});
+
+panel.addEventListener("click", e => {
+  const chip = e.target.closest(".chip");
+  if (chip) { Object.assign(S, PRESETS[+chip.dataset.p]); syncUI(); save(); }
+});
+
+$("#bSeed").addEventListener("click", () => {
+  S.seed = [Math.random() * 200 - 100, Math.random() * 200 - 100];
+  save();
+});
+$("#bReset").addEventListener("click", () => { S = { ...DEFAULTS }; syncUI(); save(); });
+
+/* ---------- Dock, fullscreen, hide ---------- */
+
+const body = document.body;
+const ICON_EYE_OFF = '<path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4 9.5 6a14 14 0 0 1-2.6 3.3M6.6 6.7A14 14 0 0 0 2.5 12c1 2 4.5 6 9.5 6 1.5 0 2.8-.4 4-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>';
+const ICON_EYE = '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>';
+const FS_ENTER = "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5";
+const FS_EXIT = "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5";
+
+const toastEl = $("#toast");
+let toastTimer;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2400);
+}
+
+function setHidden(on) {
+  body.classList.toggle("hidden", on);
+  $("#hideSvg").innerHTML = on ? ICON_EYE : ICON_EYE_OFF;
+  if (on) toast("Interface Hidden. Press H or hover the bottom right corner to show it.");
+}
+function toggleSettings() {
+  if (body.classList.contains("hidden")) setHidden(false);
+  body.classList.toggle("open");
+}
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+}
+
+$("#hideSvg").innerHTML = ICON_EYE_OFF;
+$("#bSettings").addEventListener("click", toggleSettings);
+$("#bFull").addEventListener("click", toggleFullscreen);
+$("#bHide").addEventListener("click", () => setHidden(!body.classList.contains("hidden")));
+canvas.addEventListener("dblclick", toggleFullscreen);
+document.addEventListener("fullscreenchange", () => {
+  $("#fsPath").setAttribute("d", document.fullscreenElement ? FS_EXIT : FS_ENTER);
+});
+
+// drop focus after clicking a button so Space never re-triggers it
+document.addEventListener("click", e => { const b = e.target.closest("button"); if (b) b.blur(); });
+
+addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const key = e.key.toLowerCase();
+  if (key === "h") setHidden(!body.classList.contains("hidden"));
+  else if (key === "s") toggleSettings();
+  else if (key === "f") toggleFullscreen();
+  else if (e.key === " ") { e.preventDefault(); paused = !paused; }
+});
+
+// hide the cursor after a pause when the interface is hidden
+let idleTimer;
+addEventListener("mousemove", () => {
+  body.classList.remove("idle");
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => body.classList.add("idle"), 2200);
+});
+</script>
+</body>
+</html>
