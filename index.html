@@ -6,12 +6,14 @@
 <title>topology-flow-generator</title>
 <style>
   :root {
-    --panel: rgba(14, 14, 16, .76);
-    --edge: rgba(255, 255, 255, .09);
+    --panel: rgba(14, 14, 16, .78);
+    --edge: rgba(255, 255, 255, .1);
     --text: #e9e9eb;
+    --soft: #bdbdc4;
     --mute: #86868e;
   }
   * { box-sizing: border-box; margin: 0; }
+  [hidden] { display: none !important; }
   html, body {
     height: 100%;
     overflow: hidden;
@@ -25,25 +27,39 @@
 
   /* Corner icons */
   #dock {
-    position: fixed; right: 14px; bottom: 14px; z-index: 3;
-    display: flex; gap: 2px;
-    mix-blend-mode: difference;
+    position: fixed; right: 14px; bottom: 14px; z-index: 6;
+    display: flex; gap: 2px; padding: 3px;
+    background: rgba(14, 14, 16, .78);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid rgba(255, 255, 255, .16);
+    border-radius: 12px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
     transition: opacity .35s;
   }
   #dock button {
+    position: relative;
     width: 30px; height: 30px; display: grid; place-items: center;
     border: 0; border-radius: 8px; background: none; color: #fff;
-    opacity: .4; cursor: pointer; transition: opacity .2s, background .2s;
+    opacity: .8; cursor: pointer; transition: opacity .2s, background .2s;
   }
-  #dock button:hover, #dock button:focus-visible { opacity: 1; background: rgba(255, 255, 255, .14); outline: none; }
-  #dock svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  #dock button:hover, #dock button:focus-visible { opacity: 1; background: rgba(255, 255, 255, .16); outline: none; }
+  body.info-open #bInfo { opacity: 1; background: rgba(255, 255, 255, .16); }
+  #bInfo.pulse::after {
+    content: ""; position: absolute; inset: 0; border-radius: 8px;
+    border: 1.5px solid #fff; pointer-events: none;
+    animation: ring 1.1s ease-out 2;
+  }
+  @keyframes ring { from { opacity: .9; transform: scale(1); } to { opacity: 0; transform: scale(2); } }
+  svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  #dock svg { width: 17px; height: 17px; }
   body.hidden #dock { opacity: 0; }
   body.hidden #dock:hover, body.hidden #dock:focus-within { opacity: 1; }
 
   /* Settings panel */
   #panel {
-    position: fixed; right: 14px; bottom: 54px; z-index: 2;
-    width: 276px; max-height: calc(100vh - 80px); overflow-y: auto;
+    position: fixed; right: 14px; bottom: 62px; z-index: 2;
+    width: 276px; max-height: calc(100vh - 90px); overflow-y: auto;
     padding: 16px 16px 14px;
     background: var(--panel);
     -webkit-backdrop-filter: blur(18px) saturate(1.2);
@@ -74,14 +90,13 @@
   .row:last-child { margin-bottom: 0; }
   .row .grow { flex: 1; }
 
-  input[type=color] {
-    -webkit-appearance: none; appearance: none;
-    width: 22px; height: 22px; padding: 0; border: 1px solid rgba(255, 255, 255, .28);
-    border-radius: 50%; background: none; cursor: pointer; overflow: hidden;
+  .sw {
+    width: 22px; height: 22px; padding: 0; border-radius: 50%; cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, .28); transition: opacity .2s, transform .15s;
   }
-  input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
-  input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; }
-  input[type=color]::-moz-color-swatch { border: 0; border-radius: 50%; }
+  .sw:hover { transform: scale(1.1); }
+  .sw.on { outline: 1.5px solid #fff; outline-offset: 2px; }
+  .sw.dim { opacity: .35; }
 
   .tg { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .tg input { position: absolute; opacity: 0; pointer-events: none; }
@@ -102,11 +117,83 @@
     transition: background .2s;
   }
   .btn:hover { background: rgba(255, 255, 255, .1); }
+  .btn:focus-visible { outline: 1px solid rgba(255, 255, 255, .5); outline-offset: 2px; }
+  .btn.primary { background: #fff; border-color: #fff; color: #000; font-weight: 500; }
+  .btn.primary:hover { background: rgba(255, 255, 255, .88); }
+
+  /* Color picker */
+  #cp {
+    position: fixed; z-index: 4; width: 204px; padding: 10px;
+    background: rgba(18, 18, 20, .94);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+    border: 1px solid var(--edge); border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  }
+  #cpSV {
+    position: relative; height: 120px; border-radius: 6px; cursor: crosshair; touch-action: none;
+    background-image: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent);
+  }
+  #cpHue {
+    position: relative; height: 10px; margin: 12px 1px; border-radius: 5px; cursor: pointer; touch-action: none;
+    background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  }
+  #cp i {
+    position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
+    border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .45); pointer-events: none;
+  }
+  #cpHueDot { top: 50%; }
+  .cpfoot { display: flex; align-items: center; gap: 8px; }
+  #cpSwatch { width: 22px; height: 22px; flex: none; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .28); }
+  #cpHex {
+    flex: 1; min-width: 0; padding: 5px 8px; border-radius: 6px; font: inherit; color: var(--text);
+    background: rgba(255, 255, 255, .06); border: 1px solid var(--edge);
+    font-variant-numeric: tabular-nums; text-transform: lowercase;
+  }
+  #cpHex:focus { outline: none; border-color: rgba(255, 255, 255, .4); }
+
+  /* Dialogs (welcome, about, export) */
+  .modal { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 16px; }
+  .modal .dim { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); }
+  .card {
+    position: relative; width: min(390px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
+    padding: 22px 22px 20px;
+    background: rgba(16, 16, 18, .88);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2);
+    border: 1px solid var(--edge); border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+  }
+  .card h2 { font-size: 18px; font-weight: 500; letter-spacing: -.01em; margin-bottom: 10px; padding-right: 24px; }
+  .card p { color: var(--soft); font-size: 13px; line-height: 1.55; }
+  .card ul { list-style: none; padding: 0; margin: 16px 0 14px; display: grid; gap: 10px; }
+  .card li { display: flex; align-items: center; gap: 12px; color: var(--soft); font-size: 13px; }
+  .card li svg { width: 16px; height: 16px; flex: none; color: #fff; opacity: .85; }
+  .card .small { font-size: 12px; color: var(--mute); }
+  .card .hint {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--edge);
+    font-size: 12px; color: var(--soft);
+  }
+  .card .hint svg { width: 15px; height: 15px; color: #fff; }
+  .card .primary { width: 100%; margin-top: 16px; padding: 8px 0; }
+  .x {
+    position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; display: grid; place-items: center;
+    border: 0; border-radius: 8px; background: none; color: #fff; opacity: .55; cursor: pointer; transition: opacity .2s, background .2s;
+  }
+  .x:hover { opacity: 1; background: rgba(255, 255, 255, .1); }
+  .x svg { width: 14px; height: 14px; }
+
+  #expText {
+    display: block; width: 100%; height: 190px; margin: 14px 0 12px; padding: 10px; resize: none;
+    border-radius: 8px; border: 1px solid var(--edge); background: rgba(255, 255, 255, .05); color: #cfcfd6;
+    font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .2) transparent;
+  }
+  #expText:focus { outline: none; border-color: rgba(255, 255, 255, .35); }
 
   #toast {
     position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
-    padding: 7px 14px; border-radius: 999px; z-index: 4;
-    background: rgba(14, 14, 16, .78); border: 1px solid var(--edge); color: var(--text);
+    padding: 7px 14px; border-radius: 999px; z-index: 8; white-space: nowrap;
+    background: rgba(14, 14, 16, .85); border: 1px solid var(--edge); color: var(--text);
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
     opacity: 0; pointer-events: none; transition: opacity .4s;
   }
@@ -114,7 +201,8 @@
   .err { position: fixed; inset: 0; display: grid; place-items: center; color: #aaa; }
 
   @media (prefers-reduced-motion: reduce) {
-    #panel, #dock, #toast, .chip { transition: none; }
+    #panel, #dock, #toast, .chip, .sw { transition: none; }
+    #bInfo.pulse::after { animation: none; }
   }
 </style>
 </head>
@@ -122,8 +210,16 @@
 <canvas id="c"></canvas>
 
 <div id="panel" aria-label="Settings"></div>
+<div id="cp" hidden>
+  <div id="cpSV"><i id="cpSVDot"></i></div>
+  <div id="cpHue"><i id="cpHueDot"></i></div>
+  <div class="cpfoot"><span id="cpSwatch"></span><input id="cpHex" type="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Hex color"></div>
+</div>
 
 <div id="dock">
+  <button id="bInfo" title="About (I)" aria-label="About">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8h.01"/></svg>
+  </button>
   <button id="bSettings" title="Settings (S)" aria-label="Settings">
     <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
   </button>
@@ -133,6 +229,39 @@
   <button id="bHide" title="Hide interface (H)" aria-label="Hide interface">
     <svg viewBox="0 0 24 24" id="hideSvg"></svg>
   </button>
+</div>
+
+<!-- Welcome / about -->
+<div class="modal" id="info" hidden>
+  <div class="dim"></div>
+  <div class="card" id="infoCard" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+    <h2 id="infoTitle"></h2>
+    <p>A slowly shifting topographic map, generated live in your browser. Smooth noise forms an invisible landscape, and contour lines are traced across it at regular heights, so the shapes flow, split and merge as the terrain changes.</p>
+    <ul>
+      <li><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>Settings for shape, spacing, colors and export</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Fullscreen, for use as a screensaver</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4 9.5 6a14 14 0 0 1-2.6 3.3M6.6 6.7A14 14 0 0 0 2.5 12c1 2 4.5 6 9.5 6 1.5 0 2.8-.4 4-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg><span>Hide every control. Hover the corner to bring them back</span></li>
+    </ul>
+    <p class="small">Scroll to zoom. Keys: S settings, F fullscreen, H hide, I this window, Space pause.</p>
+    <p class="hint" id="infoHint">You can reopen this anytime from the <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8h.01"/></svg> icon in the bottom right corner.</p>
+    <button class="btn primary" id="infoClose"></button>
+  </div>
+</div>
+
+<!-- Export -->
+<div class="modal" id="exp" hidden>
+  <div class="dim"></div>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="expTitle">
+    <button class="x" id="expClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <h2 id="expTitle">Export settings</h2>
+    <p>Copy or download this text to keep your look. Paste settings below and press Apply to load them.</p>
+    <textarea id="expText" spellcheck="false" aria-label="Settings text"></textarea>
+    <div class="btns">
+      <button class="btn" id="expCopy">Copy</button>
+      <button class="btn" id="expDownload">Download</button>
+      <button class="btn" id="expApply">Apply</button>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>
@@ -151,6 +280,7 @@ precision highp float;
 out vec4 outColor;
 
 uniform vec2  uRes;
+uniform vec2  uPan;
 uniform float uTime;
 uniform vec2  uSeed;
 uniform float uAmp;
@@ -225,7 +355,7 @@ float height(vec2 uv) {
 const float STEP = 0.45;   // height between band centers
 
 void main() {
-  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uScale;
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes - uPan) / uScale;
 
   // height and gradient (per uv unit)
   const float E = 0.03;
@@ -283,9 +413,9 @@ const PRESETS = [
 // key, label, min, max, step, formatter
 const SLIDERS = [
   [
-    ["amp", "Amplitude", 0.4, 3, 0.02, v => v.toFixed(2)],
-    ["scale", "Scale", 150, 1000, 10, v => v + " px"],
-    ["speed", "Speed", 0, 2, 0.02, v => v.toFixed(2)]
+    ["amp", "Amplitude", 0.4, 3, 0.05, v => v.toFixed(2)],
+    ["scale", "Scale", 100, 1500, 10, v => Math.round(v) + " px"],
+    ["speed", "Speed", 0, 2, 0.05, v => v.toFixed(2)]
   ],
   [
     ["spacing", "Line Spacing", 8, 60, 1, v => v + " px"],
@@ -296,11 +426,19 @@ const SLIDERS = [
     ["indexMul", "Index Weight", 1, 4, 0.1, v => v.toFixed(1) + "x"]
   ]
 ];
+const allSliders = SLIDERS.flat();
+const SCALE_MIN = 100, SCALE_MAX = 1500;
 
 const KEY = "topoflow.v1";
 let S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+let saveTimer;
+const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(save, 250); };
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const decimals = step => (String(step).split(".")[1] || "").length;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* ---------- WebGL ---------- */
 
@@ -339,13 +477,14 @@ gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
 const U = {};
-["uRes", "uTime", "uSeed", "uAmp", "uScale", "uSpacing", "uBand", "uUnif", "uWidth",
+["uRes", "uPan", "uTime", "uSeed", "uAmp", "uScale", "uSpacing", "uBand", "uUnif", "uWidth",
  "uIndexEvery", "uIndexMul", "uGrad", "uBg", "uC1", "uC2"]
   .forEach(n => U[n] = gl.getUniformLocation(prog, n));
 
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
 
 let dpr = 1, t = 0, paused = false, last = performance.now();
+const pan = [0, 0];   // device pixels, set by wheel zoom
 
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -358,6 +497,7 @@ resize();
 
 function draw() {
   gl.uniform2f(U.uRes, canvas.width, canvas.height);
+  gl.uniform2f(U.uPan, pan[0], pan[1]);
   gl.uniform1f(U.uTime, t);
   gl.uniform2f(U.uSeed, S.seed[0], S.seed[1]);
   gl.uniform1f(U.uAmp, S.amp);
@@ -384,10 +524,10 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
-/* ---------- Panel ---------- */
+/* ---------- Settings panel ---------- */
 
+const body = document.body;
 const panel = $("#panel");
-const decimals = step => (String(step).split(".")[1] || "").length;
 
 function sliderHTML([k, label, min, max, step]) {
   return `<label class="sl"><span>${label}</span><output data-o="${k}"></output>` +
@@ -399,9 +539,9 @@ panel.innerHTML =
   `<div class="group">${SLIDERS[1].map(sliderHTML).join("")}</div>` +
   `<div class="group">
      <div class="row"><span class="grow">Colors</span>
-       <input type="color" data-k="bg" title="Background">
-       <input type="color" data-k="c1" title="Line color">
-       <input type="color" data-k="c2" title="Second line color"></div>
+       <button class="sw" data-k="bg" title="Background" aria-label="Background color"></button>
+       <button class="sw" data-k="c1" title="Line Color" aria-label="Line color"></button>
+       <button class="sw" data-k="c2" title="Second Line Color" aria-label="Second line color"></button></div>
      <div class="row"><label class="tg grow"><input type="checkbox" data-k="grad"><i></i><span>Color by height</span></label></div>
      <div class="chips">${PRESETS.map((p, i) => {
        const f = p.grad
@@ -411,48 +551,182 @@ panel.innerHTML =
      }).join("")}</div>
    </div>` +
   `<div class="group"><div class="btns">
-     <button class="btn" id="bSeed">New seed</button>
+     <button class="btn" id="bSeed">New Seed</button>
+     <button class="btn" id="bExport">Export</button>
      <button class="btn" id="bReset">Reset</button></div></div>`;
 
-const allSliders = SLIDERS.flat();
+function setOutput(k) {
+  const def = allSliders.find(d => d[0] === k);
+  panel.querySelector(`output[data-o="${k}"]`).textContent = def[5](+S[k]);
+}
 
 function syncUI() {
-  allSliders.forEach(([k, , , , , fmt]) => {
+  allSliders.forEach(([k]) => {
     panel.querySelector(`input[data-k="${k}"]`).value = S[k];
-    panel.querySelector(`output[data-o="${k}"]`).textContent = fmt(+S[k]);
+    setOutput(k);
   });
-  ["bg", "c1", "c2"].forEach(k => panel.querySelector(`input[data-k="${k}"]`).value = S[k]);
+  panel.querySelectorAll(".sw").forEach(el => { el.style.background = S[el.dataset.k]; });
   panel.querySelector('input[data-k="grad"]').checked = S.grad;
+  panel.querySelector('.sw[data-k="c2"]').classList.toggle("dim", !S.grad);
 }
 syncUI();
 
 panel.addEventListener("input", e => {
   const el = e.target, k = el.dataset.k;
   if (!k) return;
-  S[k] = el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value : el.value;
-  const def = allSliders.find(d => d[0] === k);
-  if (def) panel.querySelector(`output[data-o="${k}"]`).textContent = def[5](+S[k]);
+  S[k] = el.type === "checkbox" ? el.checked : +el.value;
+  if (el.type === "range") setOutput(k);
+  else panel.querySelector('.sw[data-k="c2"]').classList.toggle("dim", !S.grad);
   save();
 });
 
 panel.addEventListener("click", e => {
   const chip = e.target.closest(".chip");
-  if (chip) { Object.assign(S, PRESETS[+chip.dataset.p]); syncUI(); save(); }
+  if (chip) { Object.assign(S, PRESETS[+chip.dataset.p]); syncUI(); save(); return; }
+  const sw = e.target.closest(".sw");
+  if (sw) openPicker(sw.dataset.k, sw);
 });
 
 $("#bSeed").addEventListener("click", () => {
   S.seed = [Math.random() * 200 - 100, Math.random() * 200 - 100];
   save();
 });
-$("#bReset").addEventListener("click", () => { S = { ...DEFAULTS }; syncUI(); save(); });
+$("#bReset").addEventListener("click", () => {
+  S = { ...DEFAULTS }; pan[0] = pan[1] = 0;
+  closePicker(); syncUI(); save();
+});
 
-/* ---------- Dock, fullscreen, hide ---------- */
+// scroll wheel over a slider nudges it
+let wheelAcc = 0;
+panel.addEventListener("wheel", e => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement) || el.type !== "range") return;
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 400 : 1;
+  const dy = (e.deltaY || -e.deltaX) * unit;
+  let dir = 0;
+  if (Math.abs(dy) >= 60) { dir = Math.sign(dy); wheelAcc = 0; }
+  else { wheelAcc += dy; if (Math.abs(wheelAcc) >= 60) { dir = Math.sign(wheelAcc); wheelAcc = 0; } }
+  if (!dir) return;
+  const min = +el.min, max = +el.max, step = +el.step;
+  const inc = Math.max(step, Math.round((max - min) / 100 / step) * step);
+  const v = +clamp(+el.value - dir * inc, min, max).toFixed(decimals(step));
+  if (v === +el.value) return;
+  el.value = v;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}, { passive: false });
 
-const body = document.body;
-const ICON_EYE_OFF = '<path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4 9.5 6a14 14 0 0 1-2.6 3.3M6.6 6.7A14 14 0 0 0 2.5 12c1 2 4.5 6 9.5 6 1.5 0 2.8-.4 4-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>';
-const ICON_EYE = '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>';
-const FS_ENTER = "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5";
-const FS_EXIT = "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5";
+/* ---------- Color picker ---------- */
+
+const cp = $("#cp"), cpSV = $("#cpSV"), cpHue = $("#cpHue"), cpHex = $("#cpHex");
+let cpKey = null, hsv = [0, 0, 0];
+
+function hexToHsv(hex, prevHue) {
+  const [r, g, b] = rgb(hex);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = prevHue || 0;
+  if (d > 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return [h, max === 0 ? 0 : d / max, max];
+}
+
+function hsvToHex(h, s, v) {
+  const f = n => {
+    const k = (n + h / 60) % 6;
+    return v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
+  };
+  return "#" + [f(5), f(3), f(1)].map(x => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
+}
+
+function renderPicker(keepText) {
+  const [h, s, v] = hsv, hex = hsvToHex(h, s, v);
+  cpSV.style.backgroundColor = hsvToHex(h, 1, 1);
+  $("#cpSVDot").style.left = s * 100 + "%";
+  $("#cpSVDot").style.top = (1 - v) * 100 + "%";
+  $("#cpHueDot").style.left = (h / 360) * 100 + "%";
+  $("#cpSwatch").style.background = hex;
+  if (!keepText) cpHex.value = hex;
+}
+
+function applyPicker(keepText) {
+  S[cpKey] = hsvToHex(hsv[0], hsv[1], hsv[2]);
+  panel.querySelector(`.sw[data-k="${cpKey}"]`).style.background = S[cpKey];
+  renderPicker(keepText);
+  saveSoon();
+}
+
+function placePicker(anchor) {
+  const a = anchor.getBoundingClientRect(), p = panel.getBoundingClientRect();
+  const w = cp.offsetWidth, h = cp.offsetHeight;
+  let left = p.left - w - 10, top = a.bottom - h;
+  if (left < 8) { left = clamp(a.right - w, 8, innerWidth - w - 8); top = a.top - h - 10; }
+  cp.style.left = left + "px";
+  cp.style.top = clamp(top, 8, innerHeight - h - 8) + "px";
+}
+
+function openPicker(key, anchor) {
+  if (!cp.hidden && cpKey === key) { closePicker(); return; }
+  cpKey = key;
+  hsv = hexToHsv(S[key], 0);
+  cp.hidden = false;
+  placePicker(anchor);
+  renderPicker();
+  panel.querySelectorAll(".sw").forEach(el => el.classList.toggle("on", el === anchor));
+}
+
+function closePicker() {
+  cp.hidden = true; cpKey = null;
+  panel.querySelectorAll(".sw").forEach(el => el.classList.remove("on"));
+}
+
+function drag(el, fn) {
+  el.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    fn(e);
+    const move = ev => fn(ev);
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  });
+}
+
+drag(cpSV, e => {
+  const r = cpSV.getBoundingClientRect();
+  hsv[1] = clamp((e.clientX - r.left) / r.width, 0, 1);
+  hsv[2] = 1 - clamp((e.clientY - r.top) / r.height, 0, 1);
+  applyPicker();
+});
+drag(cpHue, e => {
+  const r = cpHue.getBoundingClientRect();
+  hsv[0] = clamp((e.clientX - r.left) / r.width, 0, 0.9999) * 360;
+  applyPicker();
+});
+
+cpHex.addEventListener("input", () => {
+  let v = cpHex.value.trim().replace(/^#/, "");
+  if (/^[0-9a-f]{3}$/i.test(v)) v = v.replace(/./g, "$&$&");
+  if (!/^[0-9a-f]{6}$/i.test(v)) return;
+  hsv = hexToHsv("#" + v.toLowerCase(), hsv[0]);
+  applyPicker(true);
+});
+cpHex.addEventListener("blur", () => renderPicker());
+cpHex.addEventListener("keydown", e => { if (e.key === "Enter") cpHex.blur(); });
+
+document.addEventListener("pointerdown", e => {
+  if (!cp.hidden && !e.target.closest("#cp, .sw")) closePicker();
+});
+
+/* ---------- Toast ---------- */
 
 const toastEl = $("#toast");
 let toastTimer;
@@ -463,38 +737,225 @@ function toast(msg) {
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2400);
 }
 
+/* ---------- Dock, fullscreen, hide ---------- */
+
+const ICON_EYE_OFF = '<path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4 9.5 6a14 14 0 0 1-2.6 3.3M6.6 6.7A14 14 0 0 0 2.5 12c1 2 4.5 6 9.5 6 1.5 0 2.8-.4 4-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>';
+const ICON_EYE = '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>';
+const FS_ENTER = "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5";
+const FS_EXIT = "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5";
+
 function setHidden(on) {
+  if (on) { closePicker(); closeInfo(true); }
   body.classList.toggle("hidden", on);
   $("#hideSvg").innerHTML = on ? ICON_EYE : ICON_EYE_OFF;
-  if (on) toast("Interface Hidden. Press H or hover the bottom right corner to show it.");
+  if (on) toast("Interface hidden. Press H or hover the bottom right corner to show it.");
 }
 function toggleSettings() {
+  closeInfo();
   if (body.classList.contains("hidden")) setHidden(false);
-  body.classList.toggle("open");
+  if (!body.classList.toggle("open")) closePicker();
+}
+function closeSettings() {
+  if (body.classList.contains("open")) { body.classList.remove("open"); closePicker(); }
 }
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+  else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
 }
 
 $("#hideSvg").innerHTML = ICON_EYE_OFF;
+$("#bInfo").addEventListener("click", () => (infoOpen ? closeInfo() : openInfo(false)));
 $("#bSettings").addEventListener("click", toggleSettings);
 $("#bFull").addEventListener("click", toggleFullscreen);
 $("#bHide").addEventListener("click", () => setHidden(!body.classList.contains("hidden")));
-canvas.addEventListener("dblclick", toggleFullscreen);
 document.addEventListener("fullscreenchange", () => {
   $("#fsPath").setAttribute("d", document.fullscreenElement ? FS_EXIT : FS_ENTER);
 });
 
+// click the artwork to dismiss settings, double click for fullscreen
+canvas.addEventListener("click", closeSettings);
+canvas.addEventListener("dblclick", toggleFullscreen);
+
+// scroll wheel over the artwork zooms toward the cursor
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+  const next = clamp(S.scale * Math.exp(-e.deltaY * unit * 0.0015), SCALE_MIN, SCALE_MAX);
+  const r = next / S.scale;
+  if (r === 1) return;
+  const px = (e.clientX - innerWidth / 2) * dpr, py = (innerHeight / 2 - e.clientY) * dpr;
+  pan[0] = px - (px - pan[0]) * r;
+  pan[1] = py - (py - pan[1]) * r;
+  S.scale = next;
+  panel.querySelector('input[data-k="scale"]').value = next;
+  setOutput("scale");
+  saveSoon();
+}, { passive: false });
+
 // drop focus after clicking a button so Space never re-triggers it
 document.addEventListener("click", e => { const b = e.target.closest("button"); if (b) b.blur(); });
 
+/* ---------- Welcome and about ---------- */
+
+const info = $("#info"), infoCard = $("#infoCard"), infoDim = info.querySelector(".dim");
+let infoOpen = false, infoSeq = 0, infoAnims = [];
+
+function flightTo(btn) {
+  const a = infoCard.getBoundingClientRect(), b = btn.getBoundingClientRect();
+  const dx = b.left + b.width / 2 - (a.left + a.width / 2);
+  const dy = b.top + b.height / 2 - (a.top + a.height / 2);
+  return `translate(${dx}px, ${dy}px) scale(0.04)`;
+}
+
+function pulseInfoButton() {
+  const b = $("#bInfo");
+  b.classList.remove("pulse");
+  void b.offsetWidth;
+  b.classList.add("pulse");
+  setTimeout(() => b.classList.remove("pulse"), 2400);
+}
+
+function openInfo(first) {
+  if (infoOpen) return;
+  closePicker();
+  if (body.classList.contains("hidden")) setHidden(false);
+  infoOpen = true;
+  const seq = ++infoSeq;
+  $("#infoTitle").textContent = first ? "Welcome to Topo Flow" : "About Topo Flow";
+  $("#infoHint").hidden = !first;
+  $("#infoClose").textContent = first ? "Start" : "Close";
+  infoAnims.forEach(a => a.cancel());
+  infoAnims = [];
+  info.hidden = false;
+  body.classList.add("info-open");
+  if (!reduceMotion) {
+    const from = first ? "translateY(12px) scale(0.97)" : flightTo($("#bInfo"));
+    infoAnims = [
+      infoDim.animate({ opacity: [0, 1] }, { duration: 380, easing: "ease-out" }),
+      infoCard.animate([{ transform: from, opacity: 0 }, { transform: "none", opacity: 1 }],
+                       { duration: first ? 520 : 560, easing: "cubic-bezier(.2,.8,.2,1)" })
+    ];
+  }
+  $("#infoClose").focus({ preventScroll: true });
+}
+
+function closeInfo(instant) {
+  if (!infoOpen) return;
+  infoOpen = false;
+  const seq = ++infoSeq;
+  body.classList.remove("info-open");
+  const finish = () => {
+    if (seq !== infoSeq) return;
+    infoAnims.forEach(a => a.cancel());
+    infoAnims = [];
+    info.hidden = true;
+    if (!instant) pulseInfoButton();
+  };
+  if (instant || reduceMotion) { finish(); return; }
+  infoAnims.forEach(a => a.cancel());
+  const to = flightTo($("#bInfo"));
+  const d = infoDim.animate({ opacity: [1, 0] }, { duration: 480, fill: "forwards" });
+  const c = infoCard.animate(
+    [{ transform: "none", opacity: 1 }, { opacity: 1, offset: 0.7 }, { transform: to, opacity: 0 }],
+    { duration: 640, easing: "cubic-bezier(.6,0,.3,1)", fill: "forwards" });
+  infoAnims = [d, c];
+  c.onfinish = finish;
+}
+
+$("#infoClose").addEventListener("click", () => closeInfo());
+infoDim.addEventListener("click", () => closeInfo());
+setTimeout(() => openInfo(true), 350);
+
+/* ---------- Export ---------- */
+
+const exp = $("#exp"), expText = $("#expText");
+
+function exportText() {
+  const out = { app: "topo-flow", version: 1 };
+  Object.keys(DEFAULTS).forEach(k => { out[k] = S[k]; });
+  out.seed = S.seed.map(n => +n.toFixed(3));
+  return JSON.stringify(out, null, 2);
+}
+
+function openExport() {
+  closePicker();
+  expText.value = exportText();
+  exp.hidden = false;
+  expText.focus({ preventScroll: true });
+  expText.select();
+}
+function closeExport() { exp.hidden = true; }
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+  expText.focus(); expText.select();
+  try { return document.execCommand("copy"); } catch (e) { return false; }
+}
+
+function importSettings(text) {
+  let o;
+  try { o = JSON.parse(text); } catch (e) { return false; }
+  if (!o || typeof o !== "object") return false;
+  const next = { ...S };
+  let found = 0;
+  allSliders.forEach(([k, , min, max, step]) => {
+    if (typeof o[k] === "number" && isFinite(o[k])) {
+      const snapped = min + Math.round((clamp(o[k], min, max) - min) / step) * step;
+      next[k] = +clamp(snapped, min, max).toFixed(decimals(step) + 1);
+      found++;
+    }
+  });
+  ["bg", "c1", "c2"].forEach(k => {
+    if (typeof o[k] === "string" && /^#[0-9a-f]{6}$/i.test(o[k])) { next[k] = o[k].toLowerCase(); found++; }
+  });
+  if (typeof o.grad === "boolean") { next.grad = o.grad; found++; }
+  if (Array.isArray(o.seed) && o.seed.length === 2 && o.seed.every(n => typeof n === "number" && isFinite(n))) {
+    next.seed = o.seed.slice(); found++;
+  }
+  if (!found) return false;
+  S = next; syncUI(); save();
+  return true;
+}
+
+$("#bExport").addEventListener("click", openExport);
+$("#expClose").addEventListener("click", closeExport);
+exp.querySelector(".dim").addEventListener("click", closeExport);
+
+$("#expCopy").addEventListener("click", async () => {
+  toast((await copyText(expText.value)) ? "Copied to clipboard" : "Could not copy. Select the text and copy it manually.");
+});
+$("#expDownload").addEventListener("click", () => {
+  const blob = new Blob([expText.value + "\n"], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "topo-flow-settings.json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("Downloaded topo-flow-settings.json");
+});
+$("#expApply").addEventListener("click", () => {
+  if (importSettings(expText.value)) { toast("Settings applied"); closeExport(); }
+  else toast("Could not read those settings");
+});
+
+/* ---------- Keyboard and cursor ---------- */
+
 addEventListener("keydown", e => {
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "Escape") {
+    if (!exp.hidden) closeExport();
+    else if (infoOpen) closeInfo();
+    else if (!cp.hidden) closePicker();
+    return;
+  }
+  const typing = e.target.matches && e.target.matches("textarea, input:not([type=range]):not([type=checkbox])");
+  if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key.toLowerCase();
+  if (!exp.hidden) return;
+  if (infoOpen) { if (key === "i") closeInfo(); return; }
   if (key === "h") setHidden(!body.classList.contains("hidden"));
   else if (key === "s") toggleSettings();
   else if (key === "f") toggleFullscreen();
+  else if (key === "i") openInfo(false);
   else if (e.key === " ") { e.preventDefault(); paused = !paused; }
 });
 
